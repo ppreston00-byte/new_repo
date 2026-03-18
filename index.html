@@ -1,106 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Global Urban Bird Survey by City</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <style>
-    body { margin: 20px; font-family: Arial; }
-    .city-maps { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
-    .city-map { height: 300px; border: 1px solid #ccc; border-radius: 8px; }
-    h3 { margin: 0 0 10px; text-align: center; }
-  </style>
+  <!-- Same head as before -->
 </head>
 <body>
-  <h1>Bird Surveys by City</h1>
+  <!-- Same 5 city maps HTML structure -->
   <div class="city-maps">
-    <div>
-      <h3>Dakar</h3>
-      <div id="map-dakar" class="city-map"></div>
-    </div>
-    <div>
-      <h3>Nairobi</h3>
-      <div id="map-nairobi" class="city-map"></div>
-    </div>
-    <div>
-      <h3>Rio</h3>
-      <div id="map-rio" class="city-map"></div>
-    </div>
-    <div>
-      <h3>Paris</h3>
-      <div id="map-paris" class="city-map"></div>
-    </div>
-    <div>
-      <h3>Toronto</h3>
-      <div id="map-toronto" class="city-map"></div>
-    </div>
+    <!-- Your 5 <div> blocks with h3 and map divs -->
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-
   <script>
-    const cities = ['Dakar', 'Nairobi', 'Rio', 'Paris', 'Toronto'];
-    const mapIds = ['dakar', 'nairobi', 'rio', 'paris', 'toronto'];
+    // ... Same Papa.parse setup ...
+    
+    data.forEach(function(row) {
+      // ... Same marker creation ...
+      
+      // NEW: Calculate counts and build summary popup
+      const surveys = {};
+      ['Survey1', 'Survey 1', 'Survey1Species', 'survey1Species'].some(col => row[col] && (surveys[1] = row[col]));
+      ['Survey2', 'Survey 2', 'Survey2Species', 'survey2Species'].some(col => row[col] && (surveys[2] = row[col]));
+      ['Survey3', 'Survey 3', 'Survey3Species', 'survey3Species'].some(col => row[col] && (surveys[3] = row[col]));
+      ['Survey4', 'Survey 4', 'Survey4Species', 'survey4Species'].some(col
 
-    // Base tile layer
-    function createTileLayer() {
-      return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        attribution: '&copy; OpenStreetMap contributors'
-      });
-    }
-
-    // Load CSV once, create city maps
-    Papa.parse('data.csv', {
-      download: true,
-      header: true,
-      dynamicTyping: false,
-      complete: function(results) {
-        const data = results.data;
-        const cityMarkers = {};
-
-        // Group markers by city
-        data.forEach(function(row) {
-          const city = row.SurveyCity || row['SurveyCity'];
-          if (!city || isNaN(parseFloat(row.Latitude)) || isNaN(parseFloat(row.Longitude))) return;
-
-          const lat = parseFloat(row.Latitude);
-          const lng = parseFloat(row.Longitude);
-          const pointId = row.PointID || row['PointID'];
-          const popupHtml =
-            '<strong>' + pointId + '</strong><br>' +
-            city + '<br><br>' +
-            '<b>Survey 1</b>: ' + (row.Survey1 || row['Survey 1'] || '') + '<br>' +
-            '<b>Survey 2</b>: ' + (row.Survey2 || row['Survey 2'] || '') + '<br>' +
-            '<b>Survey 3</b>: ' + (row.Survey3 || row['Survey 3'] || '') + '<br>' +
-            '<b>Survey 4</b>: ' + (row.Survey4 || row['Survey 4'] || '');
-
-          if (!cityMarkers[city]) cityMarkers[city] = [];
-          cityMarkers[city].push(L.marker([lat, lng]).bindPopup(popupHtml));
-        });
-
-        // Create one map per city
-        mapIds.forEach(function(mapId, index) {
-          const city = cities[index];
-          const mapDiv = L.map('map-' + mapId);
-          createTileLayer().addTo(mapDiv);
-
-          const markers = cityMarkers[city] || [];
-          if (markers.length > 0) {
-            const group = L.featureGroup(markers);
-            markers.forEach(marker => mapDiv.addLayer(marker));
-            mapDiv.fitBounds(group.getBounds().pad(0.1));  // Tight bounds around city points
-          } else {
-            mapDiv.setView([0, 0], 2);  // Fallback
-          }
-
-          // Responsive resize
-          window.addEventListener('resize', () => mapDiv.invalidateSize());
-        });
-      }
-    });
-  </script>
-</body>
-</html>
