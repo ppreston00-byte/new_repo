@@ -10,6 +10,8 @@
     .city-maps { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
     .city-map { height: 300px; border: 1px solid #ccc; border-radius: 8px; }
     h3 { margin: 0 0 10px; text-align: center; }
+    a { color: blue; text-decoration: none; }
+    a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -69,13 +71,21 @@
           const lat = parseFloat(row.Latitude);
           const lng = parseFloat(row.Longitude);
           const pointId = row.PointID || row['PointID'];
-          const popupHtml =
-            '<strong>' + pointId + '</strong><br>' +
-            city + '<br><br>' +
-            '<b>Survey 1</b>: ' + (row.Survey1 || row['Survey 1'] || '') + '<br>' +
-            '<b>Survey 2</b>: ' + (row.Survey2 || row['Survey 2'] || '') + '<br>' +
-            '<b>Survey 3</b>: ' + (row.Survey3 || row['Survey 3'] || '') + '<br>' +
-            '<b>Survey 4</b>: ' + (row.Survey4 || row['Survey 4'] || '');
+
+          // Count species dynamically (split by comma)
+          const getCount = (surveyCol) => {
+            const speciesStr = row[surveyCol] || row[surveyCol.replace(' ', '')] || '';
+            return speciesStr.split(',').filter(s => s.trim()).length;
+          };
+
+          // Build popup with counts and links
+          let popupHtml = '<strong>' + pointId + '</strong><br>' + city + '<br><br>';
+          for (let i = 1; i <= 4; i++) {
+            const count = getCount(`Survey${i}`);
+            if (count > 0) {
+              popupHtml += `<b>Survey ${i}</b>: ${count} species <a href="survey.html?point=${encodeURIComponent(pointId)}&survey=${i}" target="_blank">[View]</a><br>`;
+            }
+          }
 
           if (!cityMarkers[city]) cityMarkers[city] = [];
           cityMarkers[city].push(L.marker([lat, lng]).bindPopup(popupHtml));
@@ -90,10 +100,10 @@
           const markers = cityMarkers[city] || [];
           if (markers.length > 0) {
             const group = L.featureGroup(markers);
-            markers.forEach(marker => mapDiv.addLayer(marker));
-            mapDiv.fitBounds(group.getBounds().pad(0.1));  // Tight bounds around city points
+            group.addTo(mapDiv);
+            mapDiv.fitBounds(group.getBounds().pad(0.1));
           } else {
-            mapDiv.setView([0, 0], 2);  // Fallback
+            mapDiv.setView([0, 0], 2);
           }
 
           // Responsive resize
