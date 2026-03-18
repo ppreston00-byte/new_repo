@@ -52,9 +52,11 @@
       header: true,
       dynamicTyping: true,
       complete: function(results) {
-        var data = results.data;
-        var markers = [];
-
+  console.log('First row keys:', Object.keys(results.data[0]));
+  console.log('First row sample:', results.data[0]);
+  
+  var data = results.data;
+  var markers = [];
         data.forEach(function(row) {
           if (!row.Latitude || !row.Longitude) return;
 
