@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Species List</title>
+  <style> body { font-family: Arial; margin: 20px; } ul { list-style: none; } li { margin: 10px 0; } </style>
+</head>
+<body>
+  <h1 id="title">Loading...</h1>
+  <ul id="species-list"></ul>
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const pointId = params.get('point');
+    const surveyNum = params.get('survey');
+    Papa.parse('data.csv', {
+      download: true, header: true, dynamicTyping: false,
+      complete: results => {
+        const row = results.data.find(r => (r.PointID || r['PointID']) === pointId);
+        if (row && row[`Survey${surveyNum}`]) {
+          document.getElementById('title').textContent = `${pointId} - Survey ${surveyNum}`;
+          const speciesStr = row[`Survey${surveyNum}`];
+          const species = speciesStr.split(',').map(s => s.trim()).filter(s => s);
+          const list = document.getElementById('species-list');
+          species.forEach(sp => {
+            const li = document.createElement('li');
+            const slug = sp.toLowerCase().replace(/[^a-z]/g, '-');  // e.g., "Lybiusdubius" -> "lybius-dubius"
+            li.innerHTML = `<a href="https://birdsoftheworld.org/bow/species/${slug}" target="_blank">${sp}</a>`;
+            list.appendChild(li);
+          });
+        } else {
+          document.getElementById('title').textContent = 'No data found';
+        }
+      }
+    });
+  </script>
+</body>
+</html>
