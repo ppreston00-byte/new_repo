@@ -7,32 +7,47 @@
 </head>
 <body>
   <h1 id="title">Loading...</h1>
+  <div id="debug"></div>
   <ul id="species-list"></ul>
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
   <script>
-    const params = new URLSearchParams(window.location.search);
-    const pointId = params.get('point');
-    const surveyNum = params.get('survey');
-    Papa.parse('data.csv', {
-      download: true, header: true, dynamicTyping: false,
-      complete: results => {
-        const row = results.data.find(r => (r.PointID || r['PointID']) === pointId);
-        if (row && row[`Survey${surveyNum}`]) {
-          document.getElementById('title').textContent = `${pointId} - Survey ${surveyNum}`;
-          const speciesStr = row[`Survey${surveyNum}`];
-          const species = speciesStr.split(',').map(s => s.trim()).filter(s => s);
-          const list = document.getElementById('species-list');
-          species.forEach(sp => {
-            const li = document.createElement('li');
-            const slug = sp.toLowerCase().replace(/[^a-z]/g, '-');  // e.g., "Lybiusdubius" -> "lybius-dubius"
-            li.innerHTML = `<a href="https://birdsoftheworld.org/bow/species/${slug}" target="_blank">${sp}</a>`;
-            list.appendChild(li);
-          });
-        } else {
-          document.getElementById('title').textContent = 'No data found';
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const pointId = params.get('point');
+      const surveyNum = params.get('survey');
+      document.getElementById('title').textContent = `${pointId || 'No ID'} Survey ${surveyNum || 'No survey'}`;
+      document.getElementById('debug').innerHTML = 'Params OK. Loading CSV...';
+      
+      Papa.parse('data.csv', {
+        download: true,
+        header: true,
+        dynamicTyping: false,
+        complete: function(results) {
+          document.getElementById('debug').innerHTML = `CSV loaded: ${results.data.length} rows`;
+          const row = results.data.find(r => (r.PointID || r['PointID']) === pointId);
+          document.getElementById('debug').innerHTML += `<br>Found row: ${!!row}`;
+          if (row) {
+            const speciesStr = row[`Survey${surveyNum}`] || '';
+            const species = speciesStr.split(',').map(s => s.trim()).filter(s => s);
+            document.getElementById('debug').innerHTML += `<br>Species count: ${species.length}`;
+            const list = document.getElementById('species-list');
+            species.forEach(sp => {
+              const slug = sp.toLowerCase().replace(/[^a-z]/g, '-');
+              const li = document.createElement('li');
+              li.innerHTML = `<a href="https://birdsoftheworld.org/bow/species/${slug}" target="_blank">${sp}</a>`;
+              list.appendChild(li);
+            });
+          } else {
+            document.getElementById('debug').innerHTML += '<br>No matching PointID';
+          }
+        },
+        error: function(err) {
+          document.getElementById('debug').innerHTML = 'CSV Error: ' + err;
         }
-      }
-    });
+      });
+    } catch(e) {
+      document.getElementById('debug').innerHTML = 'JS Error: ' + e.message;
+    }
   </script>
 </body>
 </html>
