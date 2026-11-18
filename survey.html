@@ -6,15 +6,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       font-family: Arial, Helvetica, sans-serif;
       background: #f7f7f7;
       color: #222;
+      line-height: 1.5;
     }
 
     .container {
-      max-width: 900px;
+      max-width: 1000px;
       margin: 0 auto;
       padding: 40px 20px;
     }
@@ -27,17 +32,19 @@
       text-decoration: none;
     }
 
-    .back-link:hover {
+    .back-link:hover,
+    .back-link:focus {
       text-decoration: underline;
     }
 
     h1 {
       margin: 0 0 5px;
       font-size: 32px;
+      overflow-wrap: anywhere;
     }
 
     .subtitle {
-      margin: 0 0 25px;
+      margin: 0 0 20px;
       color: #666;
       font-size: 18px;
     }
@@ -49,7 +56,13 @@
       padding: 8px 15px;
       border-radius: 20px;
       font-weight: bold;
-      margin-bottom: 30px;
+      margin-bottom: 20px;
+    }
+
+    .instructions {
+      color: #666;
+      margin: 0 0 25px;
+      font-size: 14px;
     }
 
     .species-list {
@@ -57,7 +70,7 @@
       padding: 0;
       margin: 0;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
       gap: 12px;
     }
 
@@ -65,139 +78,388 @@
       background: white;
       border: 1px solid #ddd;
       border-radius: 8px;
-      padding: 15px;
+      padding: 18px;
+      overflow-wrap: anywhere;
     }
 
     .species-item a {
       color: #0066cc;
       font-weight: bold;
       text-decoration: none;
-      word-break: break-word;
     }
 
-    .species-item a:hover {
+    .species-item a:hover,
+    .species-item a:focus {
       text-decoration: underline;
     }
 
-    .no-species {
+    .unmatched-name {
+      font-style: italic;
+    }
+
+    .review-note {
+      display: block;
+      color: #777;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    .message {
       background: white;
       border: 1px solid #ddd;
       border-radius: 8px;
       padding: 25px;
-      color: #666;
+      color: #555;
     }
 
     .error {
       background: #fff3f3;
-      border: 1px solid #ffcccc;
+      border-color: #ffcccc;
       color: #a30000;
-      padding: 20px;
-      border-radius: 8px;
+    }
+
+    @media (max-width: 600px) {
+      .container {
+        padding: 25px 15px;
+      }
+
+      h1 {
+        font-size: 26px;
+      }
+
+      .species-list {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 
 <body>
-  <div class="container">
-    <a href="index.html" class="back-link">&larr; Back to map</a>
+  <main class="container">
+    <a href="index.html" class="back-link" id="backLink">
+      &larr; Back to map
+    </a>
 
     <h1 id="pageTitle">Species list</h1>
-    <p class="subtitle" id="pageSubtitle"></p>
+    <p class="subtitle" id="pageSubtitle">Loading survey information…</p>
 
-    <div id="summary"></div>
-    <div id="speciesContainer"></div>
-  </div>
+    <div id="summary" aria-live="polite"></div>
+
+    <p class="instructions" id="instructions" hidden>
+      Select a species name to open its Birds of the World account
+      in a new tab.
+    </p>
+
+    <div id="speciesContainer" aria-live="polite"></div>
+  </main>
 
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
   <script>
-    // Read ?point=Dakar_18&survey=1 from the URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const pointId = urlParams.get("point");
-    const surveyNumber = urlParams.get("survey");
+    const params = new URLSearchParams(window.location.search);
+    const pointId = params.get("point");
+    const surveyNumber = params.get("survey");
 
     const pageTitle = document.getElementById("pageTitle");
     const pageSubtitle = document.getElementById("pageSubtitle");
     const summary = document.getElementById("summary");
-    const speciesContainer = document.getElementById("speciesContainer");
+    const container = document.getElementById("speciesContainer");
+    const backLink = document.getElementById("backLink");
+    const instructions = document.getElementById("instructions");
 
-    if (!pointId || !surveyNumber) {
-      pageTitle.textContent = "Survey not found";
-      pageSubtitle.textContent = "Please return to the map and select a survey point.";
-      speciesContainer.innerHTML =
-        '<div class="error">Missing survey information.</div>';
-    } else {
-      pageTitle.textContent = pointId + " — Survey " + surveyNumber;
-      pageSubtitle.textContent =
-        "Species reported during Survey " + surveyNumber;
+    function normalizeName(value) {
+      return String(value || "")
+        .toLowerCase()
+        .replace(/[^a-z]/g, "");
+    }
 
-      Papa.parse("data.csv", {
-        download: true,
-        header: true,
-        dynamicTyping: false,
-        complete: function (results) {
-          const data = results.data;
+    function loadCSV(url) {
+      return new Promise(function(resolve, reject) {
+        Papa.parse(url, {
+          download: true,
+          header: true,
+          skipEmptyLines: "greedy",
+          dynamicTyping: false,
 
-          const row = data.find(function (item) {
-            return item.PointID === pointId;
-          });
+          transformHeader: function(header) {
+            return header.replace(/^\uFEFF/, "").trim();
+          },
 
-          if (!row) {
-            speciesContainer.innerHTML =
-              '<div class="error">Could not find survey point: ' +
-              pointId +
-              "</div>";
-            return;
+          complete: function(results) {
+            if (results.errors.length > 0) {
+              console.error("CSV parsing problems:", url, results.errors);
+              reject(new Error("Could not read " + url + " correctly."));
+              return;
+            }
+
+            resolve(results.data);
+          },
+
+          error: function(error) {
+            reject(error);
           }
-
-          // Get the species list for the selected survey
-          const surveyColumn = "Survey" + surveyNumber;
-          const speciesText = row[surveyColumn] || "";
-
-          const species = speciesText
-            .split(",")
-            .map(function (name) {
-              return name.trim();
-            })
-            .filter(function (name) {
-              return name !== "";
-            });
-
-          summary.innerHTML =
-            "<span class='summary'>" +
-            species.length +
-            " species reported</span>";
-
-          if (species.length === 0) {
-            speciesContainer.innerHTML =
-              '<div class="no-species">No species were recorded for this survey.</div>';
-            return;
-          }
-
-          // Create a clean species list
-          const list = document.createElement("ul");
-          list.className = "species-list";
-
-          species.forEach(function (scientificName) {
-            const item = document.createElement("li");
-            item.className = "species-item";
-
-            const link = document.createElement("a");
-            link.href =
-              "https://birdsoftheworld.org/bow/search?query=" +
-              encodeURIComponent(scientificName);
-            link.target = "_blank";
-            link.rel = "noopener";
-            link.textContent = scientificName;
-
-            item.appendChild(link);
-            list.appendChild(item);
-          });
-
-          speciesContainer.appendChild(list);
-        }
+        });
       });
     }
+
+    function showMessage(text, isError) {
+      container.replaceChildren();
+
+      const box = document.createElement("div");
+      box.className = isError ? "message error" : "message";
+      box.textContent = text;
+
+      container.appendChild(box);
+    }
+
+    function buildLookup(reference) {
+      const lookup = new Map();
+
+      reference.forEach(function(record) {
+        const scientificName = String(record.scientific_name || "").trim();
+        const commonName = String(record.common_name || "").trim();
+        const speciesCode = String(record.species_code || "").trim();
+
+        if (
+          !scientificName ||
+          !commonName ||
+          !speciesCode ||
+          /^(na|n\/a)$/i.test(speciesCode)
+        ) {
+          return;
+        }
+
+        const species = {
+          scientificName: scientificName,
+          commonName: commonName,
+          speciesCode: speciesCode
+        };
+
+        // Allow matching scientific or common names, including
+        // names with spaces or periods removed.
+        [scientificName, commonName].forEach(function(name) {
+          const key = normalizeName(name);
+
+          if (!key) {
+            return;
+          }
+
+          if (!lookup.has(key)) {
+            lookup.set(key, new Map());
+          }
+
+          lookup.get(key).set(speciesCode, species);
+        });
+      });
+
+      return lookup;
+    }
+
+    async function showSurvey() {
+      if (!pointId || !/^[1-4]$/.test(surveyNumber || "")) {
+        pageTitle.textContent = "Survey not found";
+        pageSubtitle.textContent = "";
+
+        showMessage(
+          "Please return to the map and select a survey.",
+          true
+        );
+
+        return;
+      }
+
+      pageTitle.textContent = pointId + " — Survey " + surveyNumber;
+      document.title =
+        pointId + " — Survey " + surveyNumber +
+        " | Global Urban Bird Survey";
+
+      try {
+        if (typeof Papa === "undefined") {
+          throw new Error("The CSV-reading library did not load.");
+        }
+
+        const [data, reference] = await Promise.all([
+          loadCSV("data.csv"),
+          loadCSV("species_reference.csv")
+        ]);
+
+        if (reference.length === 0) {
+          throw new Error("The species reference file is empty.");
+        }
+
+        const requiredColumns = [
+          "scientific_name",
+          "common_name",
+          "species_code"
+        ];
+
+        const missingColumns = requiredColumns.filter(function(column) {
+          return !Object.prototype.hasOwnProperty.call(reference[0], column);
+        });
+
+        if (missingColumns.length > 0) {
+          throw new Error(
+            "Species reference is missing columns: " +
+            missingColumns.join(", ")
+          );
+        }
+
+        const row = data.find(function(item) {
+          return String(item.PointID || "").trim() === pointId;
+        });
+
+        if (!row) {
+          pageSubtitle.textContent = "";
+
+          showMessage(
+            "Could not find survey point " + pointId + ".",
+            true
+          );
+
+          return;
+        }
+
+        const city = String(row.SurveyCity || "").trim();
+
+        if (city) {
+          backLink.href = "index.html?city=" + encodeURIComponent(city);
+          backLink.textContent = "← Back to " + city + " map";
+        }
+
+        pageSubtitle.textContent =
+          (city ? city + " • " : "") +
+          "Species reported during Survey " + surveyNumber;
+
+        const lookup = buildLookup(reference);
+
+        const speciesText =
+          row["Survey" + surveyNumber] ||
+          row["Survey " + surveyNumber] ||
+          "";
+
+        const reportedNames = speciesText
+          .split(",")
+          .map(function(name) {
+            return name.trim();
+          })
+          .filter(function(name) {
+            return name !== "" && !/^(na|n\/a|none)$/i.test(name);
+          });
+
+        // Deduplicate matched species by species code.
+        // Preserve unresolved entries for review.
+        const uniqueEntries = new Map();
+
+        reportedNames.forEach(function(name) {
+          const key = normalizeName(name);
+          const candidates = lookup.get(key);
+
+          const match = candidates && candidates.size === 1
+            ? candidates.values().next().value
+            : null;
+
+          const entryKey = match
+            ? "code:" + match.speciesCode
+            : "unmatched:" + key;
+
+          if (!uniqueEntries.has(entryKey)) {
+            uniqueEntries.set(entryKey, {
+              originalName: name,
+              match: match,
+              label: match ? match.commonName : name
+            });
+          }
+        });
+
+        const entries = Array.from(uniqueEntries.values());
+
+        entries.sort(function(a, b) {
+          return a.label.localeCompare(b.label);
+        });
+
+        const unresolvedCount = entries.filter(function(entry) {
+          return !entry.match;
+        }).length;
+
+        const badge = document.createElement("span");
+        badge.className = "summary";
+
+        badge.textContent = unresolvedCount > 0
+          ? entries.length + " entries • " +
+            unresolvedCount + " needing name review"
+          : entries.length + " species reported";
+
+        summary.replaceChildren(badge);
+        container.replaceChildren();
+
+        if (entries.length === 0) {
+          showMessage(
+            "No species entries are available for this survey.",
+            false
+          );
+
+          return;
+        }
+
+        instructions.hidden = !entries.some(function(entry) {
+          return Boolean(entry.match);
+        });
+
+        const list = document.createElement("ul");
+        list.className = "species-list";
+
+        entries.forEach(function(entry) {
+          const item = document.createElement("li");
+          item.className = "species-item";
+
+          if (entry.match) {
+            const link = document.createElement("a");
+
+            link.href =
+              "https://birdsoftheworld.org/bow/species/" +
+              encodeURIComponent(entry.match.speciesCode) +
+              "/cur/introduction";
+
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = entry.match.commonName;
+
+            item.appendChild(link);
+          } else {
+            const label = document.createElement("span");
+            label.className = "unmatched-name";
+            label.textContent = entry.originalName;
+
+            const note = document.createElement("small");
+            note.className = "review-note";
+            note.textContent = "Species reference needs review";
+
+            item.appendChild(label);
+            item.appendChild(note);
+          }
+
+          list.appendChild(item);
+        });
+
+        container.appendChild(list);
+
+      } catch (error) {
+        console.error(error);
+
+        pageSubtitle.textContent = "";
+        instructions.hidden = true;
+
+        showMessage(
+          "Unable to load the survey information. " +
+          "Check that data.csv and species_reference.csv are in " +
+          "the same folder as survey.html, and that the reference " +
+          "contains scientific_name, common_name, and species_code columns.",
+          true
+        );
+      }
+    }
+
+    showSurvey();
   </script>
 </body>
 </html>
