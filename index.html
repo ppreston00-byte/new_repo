@@ -152,8 +152,110 @@
       download: true,
       header: true,
       dynamicTyping: false,
-      complete: function (results) {
-        const data = results.data;
+complete: async function (results) {
+  const data = results.data;
+
+  function normalizeName(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z]/g, "");
+  }
+
+  let reference;
+
+  try {
+    reference = await new Promise(function(resolve, reject) {
+      Papa.parse("species_reference.csv", {
+        download: true,
+        header: true,
+        skipEmptyLines: "greedy",
+        dynamicTyping: false,
+
+        transformHeader: function(header) {
+          return header.replace(/^\uFEFF/, "").trim();
+        },
+
+        complete: function(parsed) {
+          if (parsed.errors.length > 0) {
+            reject(new Error("Could not read species_reference.csv."));
+          } else {
+            resolve(parsed.data);
+          }
+        },
+
+        error: reject
+      });
+    });
+  } catch (error) {
+    console.error(error);
+
+    document.getElementById("cityTitle").textContent =
+      "Unable to load species reference";
+
+    document.getElementById("cityLinks").textContent =
+      "Unable to load species_reference.csv. Please try again later.";
+
+    return;
+  }
+
+  const speciesLookup = new Map();
+
+  reference.forEach(function(record) {
+    const scientificName = String(record.scientific_name || "").trim();
+    const commonName = String(record.common_name || "").trim();
+    const code = String(record.species_code || "").trim();
+
+    if (
+      !scientificName ||
+      !commonName ||
+      !code ||
+      /^(na|n\/a)$/i.test(code)
+    ) {
+      return;
+    }
+
+    [scientificName, commonName].forEach(function(name) {
+      const key = normalizeName(name);
+      if (!key) return;
+
+      if (!speciesLookup.has(key)) {
+        speciesLookup.set(key, new Set());
+      }
+
+      speciesLookup.get(key).add(code);
+    });
+  });
+
+  function summarizeSurvey(speciesText) {
+    const uniqueEntries = new Set();
+    const unresolvedEntries = new Set();
+
+    String(speciesText || "")
+      .split(",")
+      .map(function(name) {
+        return name.trim();
+      })
+      .filter(function(name) {
+        return name !== "" && !/^(na|n\/a|none)$/i.test(name);
+      })
+      .forEach(function(name) {
+        const key = normalizeName(name);
+        const candidates = speciesLookup.get(key);
+
+        if (candidates && candidates.size === 1) {
+          const code = candidates.values().next().value;
+          uniqueEntries.add("code:" + code);
+        } else {
+          uniqueEntries.add("unmatched:" + key);
+          unresolvedEntries.add(key);
+        }
+      });
+
+    return {
+      count: uniqueEntries.size,
+      unresolved: unresolvedEntries.size
+    };
+  }
 
         // Get all unique city names from the CSV
         const cityNames = [...new Set(
@@ -210,34 +312,40 @@
             return;
           }
 
-          // Count species in each survey
-          function getSpeciesCount(surveyColumn) {
-            const speciesText = row[surveyColumn] || "";
-            return speciesText
-              .split(",")
-              .filter(function (species) {
-                return species.trim() !== "";
-              })
-              .length;
-          }
+// Build the popup using the same counting rules as survey.html
+let popupHtml = "";
 
-          // Build the popup
-          let popupHtml =
-            "<strong>" + pointId + "</strong><br>" +
-            city + "<br><br>";
+const pointLabel = document.createElement("strong");
+pointLabel.textContent = pointId;
 
-          for (let i = 1; i <= 4; i++) {
-            const count = getSpeciesCount("Survey" + i);
+const cityLabel = document.createElement("span");
+cityLabel.textContent = city;
 
-            if (count > 0) {
-              popupHtml +=
-                "<b>Survey " + i + "</b>: " + count + " species " +
-                '<a href="survey.html?point=' +
-                encodeURIComponent(pointId) +
-                "&survey=" + i +
-                '" target="_blank">[View]</a><br>';
-            }
-          }
+popupHtml += pointLabel.outerHTML + "<br>";
+popupHtml += cityLabel.outerHTML + "<br><br>";
+
+for (let i = 1; i <= 4; i++) {
+  const speciesText =
+    row["Survey" + i] ||
+    row["Survey " + i] ||
+    "";
+
+  const surveySummary = summarizeSurvey(speciesText);
+
+  if (surveySummary.count > 0) {
+    const countLabel = surveySummary.unresolved > 0
+      ? surveySummary.count + " entries (" +
+        surveySummary.unresolved + " needing name review)"
+      : surveySummary.count + " species";
+
+    popupHtml +=
+      "<b>Survey " + i + "</b>: " + countLabel + " " +
+      '<a href="survey.html?point=' +
+      encodeURIComponent(pointId) +
+      "&survey=" + i +
+      '" target="_blank" rel="noopener noreferrer">[View]</a><br>';
+  }
+}
 
           const marker = L.marker([lat, lng]).bindPopup(popupHtml);
           marker.addTo(map);
