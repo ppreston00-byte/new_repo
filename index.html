@@ -2,112 +2,262 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Bird survey cities</title>
+  <title>Global Urban Bird Survey</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
   <style>
-    body { margin: 20px; font-family: Arial; }
-    .city-maps { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
-    .city-map { height: 300px; border: 1px solid #ccc; border-radius: 8px; }
-    h3 { margin: 0 0 10px; text-align: center; }
-    a { color: blue; text-decoration: none; }
-    a:hover { text-decoration: underline; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f7f7f7;
+      color: #222;
+    }
+
+    /* City selection page */
+    .city-menu {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 50px 20px;
+      text-align: center;
+    }
+
+    .city-menu h1 {
+      margin-bottom: 10px;
+    }
+
+    .city-menu p {
+      color: #555;
+      margin-bottom: 35px;
+    }
+
+    #cityLinks {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px;
+    }
+
+    .city-card {
+      display: block;
+      padding: 30px 20px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      text-decoration: none;
+      color: inherit;
+      transition: box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .city-card:hover {
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+      transform: translateY(-3px);
+    }
+
+    .city-card h3 {
+      margin: 0 0 8px;
+      font-size: 22px;
+    }
+
+    .city-card p {
+      margin: 0;
+      color: #666;
+      font-size: 14px;
+    }
+
+    /* Individual city map page */
+    #singleMapContainer {
+      width: 100%;
+      min-height: 100vh;
+    }
+
+    .map-header {
+      padding: 15px 20px;
+      background: white;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      text-decoration: none;
+      color: #0066cc;
+    }
+
+    .back-link:hover {
+      text-decoration: underline;
+    }
+
+    #cityTitle {
+      margin: 0;
+      font-size: 26px;
+    }
+
+    #map {
+      width: 100%;
+      height: calc(100vh - 105px);
+    }
+
+    @media (max-width: 600px) {
+      #map {
+        height: calc(100vh - 130px);
+      }
+    }
   </style>
 </head>
+
 <body>
-  <h1>Global Urban Bird Surveys by City</h1>
-  <div class="city-maps">
-    <div>
-      <h3>Dakar</h3>
-      <div id="map-dakar" class="city-map"></div>
+  <!-- City selection page -->
+  <div id="cityMenu" class="city-menu">
+    <h1>Global Urban Bird Survey</h1>
+    <p>Select a city to explore its survey locations and reported species.</p>
+
+    <div id="cityLinks"></div>
+  </div>
+
+  <!-- Individual city map page -->
+  <div id="singleMapContainer" style="display: none;">
+    <div class="map-header">
+      <a href="index.html" class="back-link">&larr; Back to all cities</a>
+      <h2 id="cityTitle"></h2>
     </div>
-    <div>
-      <h3>Nairobi</h3>
-      <div id="map-nairobi" class="city-map"></div>
-    </div>
-    <div>
-      <h3>Rio</h3>
-      <div id="map-rio" class="city-map"></div>
-    </div>
-    <div>
-      <h3>Paris</h3>
-      <div id="map-paris" class="city-map"></div>
-    </div>
-    <div>
-      <h3>Toronto</h3>
-      <div id="map-toronto" class="city-map"></div>
-    </div>
+
+    <div id="map"></div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
   <script>
-    const cities = ['Dakar', 'Nairobi', 'Rio', 'Paris', 'Toronto'];
-    const mapIds = ['dakar', 'nairobi', 'rio', 'paris', 'toronto'];
+    // Read ?city=Dakar from the URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const selectedCity = urlParams.get("city");
 
-    // Base tile layer
-    function createTileLayer() {
-      return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        attribution: '&copy; OpenStreetMap contributors'
-      });
+    const cityMenu = document.getElementById("cityMenu");
+    const singleMapContainer = document.getElementById("singleMapContainer");
+
+    // Show either the city menu or one large city map
+    if (selectedCity) {
+      cityMenu.style.display = "none";
+      singleMapContainer.style.display = "block";
+      document.getElementById("cityTitle").textContent = selectedCity;
+    } else {
+      cityMenu.style.display = "block";
+      singleMapContainer.style.display = "none";
     }
 
-    // Load CSV once, create city maps
-    Papa.parse('data.csv', {
+    // Load the CSV and build the maps
+    Papa.parse("data.csv", {
       download: true,
       header: true,
       dynamicTyping: false,
-      complete: function(results) {
+      complete: function (results) {
         const data = results.data;
-        const cityMarkers = {};
 
-        // Group markers by city
-        data.forEach(function(row) {
-          const city = row.SurveyCity || row['SurveyCity'];
-          if (!city || isNaN(parseFloat(row.Latitude)) || isNaN(parseFloat(row.Longitude))) return;
+        // Get all unique city names from the CSV
+        const cityNames = [...new Set(
+          data
+            .map(function (row) {
+              return row.SurveyCity;
+            })
+            .filter(function (city) {
+              return city && city.trim() !== "";
+            })
+        )];
 
+        // Build the city-selection cards
+        const cityLinks = document.getElementById("cityLinks");
+
+        cityNames.forEach(function (city) {
+          const link = document.createElement("a");
+          link.href = "?city=" + encodeURIComponent(city);
+          link.className = "city-card";
+          link.innerHTML =
+            "<h3>" + city + "</h3>" +
+            "<p>View survey locations and species</p>";
+
+          cityLinks.appendChild(link);
+        });
+
+        // If no city is selected, do not create the large map
+        if (!selectedCity) {
+          return;
+        }
+
+        // Filter data to the selected city
+        const cityData = data.filter(function (row) {
+          return row.SurveyCity === selectedCity;
+        });
+
+        // Create the large map
+        const map = L.map("map");
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 18,
+          attribution: "&copy; OpenStreetMap contributors"
+        }).addTo(map);
+
+        const markers = [];
+
+        cityData.forEach(function (row) {
+          const city = row.SurveyCity;
+          const pointId = row.PointID;
           const lat = parseFloat(row.Latitude);
           const lng = parseFloat(row.Longitude);
-          const pointId = row.PointID || row['PointID'];
 
-          // Count species dynamically (split by comma)
-          const getCount = (surveyCol) => {
-            const speciesStr = row[surveyCol] || row[surveyCol.replace(' ', '')] || '';
-            return speciesStr.split(',').filter(s => s.trim()).length;
-          };
+          if (!pointId || isNaN(lat) || isNaN(lng)) {
+            return;
+          }
 
-          // Build popup with counts and links
-          let popupHtml = '<strong>' + pointId + '</strong><br>' + city + '<br><br>';
+          // Count species in each survey
+          function getSpeciesCount(surveyColumn) {
+            const speciesText = row[surveyColumn] || "";
+            return speciesText
+              .split(",")
+              .filter(function (species) {
+                return species.trim() !== "";
+              })
+              .length;
+          }
+
+          // Build the popup
+          let popupHtml =
+            "<strong>" + pointId + "</strong><br>" +
+            city + "<br><br>";
+
           for (let i = 1; i <= 4; i++) {
-            const count = getCount(`Survey${i}`);
+            const count = getSpeciesCount("Survey" + i);
+
             if (count > 0) {
-              popupHtml += `<b>Survey ${i}</b>: ${count} species <a href="survey.html?point=${encodeURIComponent(pointId)}&survey=${i}" target="_blank">[View]</a><br>`;
+              popupHtml +=
+                "<b>Survey " + i + "</b>: " + count + " species " +
+                '<a href="survey.html?point=' +
+                encodeURIComponent(pointId) +
+                "&survey=" + i +
+                '" target="_blank">[View]</a><br>';
             }
           }
 
-          if (!cityMarkers[city]) cityMarkers[city] = [];
-          cityMarkers[city].push(L.marker([lat, lng]).bindPopup(popupHtml));
+          const marker = L.marker([lat, lng]).bindPopup(popupHtml);
+          marker.addTo(map);
+          markers.push(marker);
         });
 
-        // Create one map per city
-        mapIds.forEach(function(mapId, index) {
-          const city = cities[index];
-          const mapDiv = L.map('map-' + mapId);
-          createTileLayer().addTo(mapDiv);
+        // Zoom tightly to the selected city's points
+        if (markers.length > 0) {
+          const group = L.featureGroup(markers);
+          map.fitBounds(group.getBounds(), {
+            padding: [40, 40],
+            maxZoom: 16
+          });
+        } else {
+          map.setView([0, 0], 2);
+        }
 
-          const markers = cityMarkers[city] || [];
-          if (markers.length > 0) {
-            const group = L.featureGroup(markers);
-            group.addTo(mapDiv);
-            mapDiv.fitBounds(group.getBounds().pad(0.1));
-          } else {
-            mapDiv.setView([0, 0], 2);
-          }
-
-          // Responsive resize
-          window.addEventListener('resize', () => mapDiv.invalidateSize());
+        // Make sure Leaflet redraws correctly after resizing
+        window.addEventListener("resize", function () {
+          map.invalidateSize();
         });
       }
     });
